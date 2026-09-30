@@ -84,8 +84,14 @@ class ZXRegion:
         if self.movement_angle is None:
             return self.name
 
-        valid_walking_angles = [x[6] for x in ClipMovementAngleToPreviousMovementAngles[self.movement_angle]]
-        return f"CLIP MOVEMENT ANGLE: {hex(self.movement_angle)}\nEXTRA WALKING STEPS: {self.walking_steps}\nVALID (TARGETED) WALKING CAMERA ANGLES: {valid_walking_angles}"
+        # print(f"{ClipMovementAngleToPreviousMovementAngles=}")
+        # print("\n\n\n")
+        # for k, v in ClipMovementAngleToPreviousMovementAngles.items():
+        #     print(f"{hex(k)} : {v}")
+        # valid_walking_angles = [x[6] for x in ClipMovementAngleToPreviousMovementAngles[self.movement_angle]]
+        # return f"CLIP MOVEMENT ANGLE: {hex(self.movement_angle)}\nEXTRA WALKING STEPS: {self.walking_steps}\nVALID (TARGETED) WALKING CAMERA ANGLES: {valid_walking_angles}"
+        # claude was stupid and called it "self.movement_angle" but really it is the camera angle/movement angle you need while WALKING, not clipping
+        return f"WALKING MOVEMENT ANGLE: {hex(self.movement_angle)}\nEXTRA WALKING STEPS: {self.walking_steps}\n"
 
     def __repr__(self):
         return f"ZXRegion({self.name!r}, {self.describe()})"
@@ -180,7 +186,7 @@ class RegionSet:
             if not V.any():  # region with no Yes can never match; don't carry it
                 skipped.append(path.stem)
                 continue
-            angle, steps = params.get(path, (None, None))
+            angle, steps = params.get(path, (None, None)) # I think claude called it movement_angle but it is really the WALKING movement angle
             regions.append(ZXRegion(zs, xs, V, atol, name=path.stem, movement_angle=angle, walking_steps=steps))
         if not regions:
             raise ValueError(f"all {len(paths)} grids in {str(directory)!r} contain no Yes cells")
@@ -384,6 +390,20 @@ def _check_all_bins(keys, filename):
             f"unexpected {len(unexpected)} (first few: {[hex(u) for u in unexpected[:5]]})"
         )
 
+def _check_all_angles(keys, filename):
+    expected = set(range(0, TOTAL_ANGLES, 0x1)) # changed 0x10 to 0x1, we truly need all 65536 angles in this case -- this is specifically for guanowalking because both angle and camera angle matter for it
+    got = set(keys)
+    if len(got) != TOTAL_ANGLES:
+        raise ValueError(f"{len(got)=}, {TOTAL_ANGLES=}")
+    if got != expected:
+        missing = sorted(expected - got)
+        unexpected = sorted(got - expected)
+        raise ValueError(
+            f"{filename}: expected all {len(expected)} angle bins. "
+            f"Missing {len(missing)} (first few: {[hex(m) for m in missing[:5]]}), "
+            f"unexpected {len(unexpected)} (first few: {[hex(u) for u in unexpected[:5]]})"
+        )
+
 
 def _read_sorted_by_frame(filename):
     """
@@ -460,7 +480,7 @@ def preprocess_guano_movement_angles_csv(filename="guanowalk_left.csv"):
             - if camera angle > angle then a straight left guanowalk will not walk forward initially, but straight right will
             - if camera angle = angle, then straight right and straight left guanowalks will both initially walk forward
         
-        also need to be way more careful about guano chain being reset. if he doesnt walk forward, we need to reset chain length
+        also need to be way more careful about guano chain being reset. if he doesnt walk forward, we need to reset chain length -- I handled this in the guano scoot function
     """
     if filename not in ["guanowalk_left.csv", "guanowalk_right.csv"]:
         raise ValueError(f"{filename=}")
@@ -471,10 +491,10 @@ def preprocess_guano_movement_angles_csv(filename="guanowalk_left.csv"):
 
     for initial_angle_str, rows in data.groupby("Initial Angle", sort=False):
         # it is important that we start on frame 8 because previous movement angles in the data aren't updated yet
-        late = rows.loc[rows["Frame"] >= 8, "Movement Angle"]
+        late = rows.loc[rows["Frame"] >= 8 and rows["Linear Velocity"] > 0, "Movement Angle"] # Sometimes it starts on frame 8, but sometimes frame 9 if linear velocity was 0 on frame 8 -- cardinal guanowalks take 1 extra frame to start
         cache[_to_int(initial_angle_str)] = [_to_int(a) for a in late] # list of all movement angles once they start updating 
 
-    _check_all_bins(cache.keys(), filename)
+    _check_all_angles(cache.keys(), filename) # extremely important that we check all 65536 angles in this case
     return cache
 
 def preprocess_targeted_camera_angles(filename="hold_sidehop_left.csv"):
@@ -566,15 +586,17 @@ def guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True, fp3
     - if camera angle > angle then a straight left guanowalk will not walk forward initially, but straight right will
     - if camera angle = angle, then straight right and straight left guanowalks will both initially walk forward
 
-    well, i could just do a hacky fix and say if the absolute difference between movement angle and camera angle is < 0x07
-    (really i think checking for equality suffices), then we reset guano chain length
+    forget it, I am going a lookup table for all 65536 angles
+
+    i do a hacky fix to guano chain length and say if the absolute difference between movement angle and camera angle +/- 0x4000 is < 0x07
+    (really i think checking for equality suffices), then we reset guano chain length -- cardinal guano walks reset the chain
     """
     if not fp32:
         cumulative_linear_velocity = 4 # sum([2, 2])
         if left:
-            movement_angle_list = FacingAngleToLeftGuanoMovementAngles[get_bin(angle)]
+            movement_angle_list = FacingAngleToLeftGuanoMovementAngles[angle]#[get_bin(angle)]
         else:
-            movement_angle_list = FacingAngleToRightGuanoMovementAngles[get_bin(angle)]
+            movement_angle_list = FacingAngleToRightGuanoMovementAngles[angle]#[get_bin(angle)]
         if guano_chain_length >= len(movement_angle_list):
             raise NotImplementedError(f"I have only implemented the first {len(movement_angle_list)} movement values, got {guano_chain_length=}")
         movement_angle = movement_angle_list[guano_chain_length]
@@ -586,20 +608,26 @@ def guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True, fp3
         updated_z_pos = z_pos + VELOCITY_SCALE * cumulative_z_velocity
     else:
         if left:
-            movement_angle_list = FacingAngleToLeftGuanoMovementAngles[get_bin(angle)]
+            movement_angle_list = FacingAngleToLeftGuanoMovementAngles[angle]#[get_bin(angle)] # very intentionally NOT using get_bin() here, we need to be able to lookup all 65536 possible angles!
         else:
-            movement_angle_list = FacingAngleToRightGuanoMovementAngles[get_bin(angle)]
+            movement_angle_list = FacingAngleToRightGuanoMovementAngles[angle]#[get_bin(angle)]
         if guano_chain_length >= len(movement_angle_list):
             raise NotImplementedError(f"I have only implemented the first {len(movement_angle_list)} movement values, got {guano_chain_length=}")
         movement_angle = movement_angle_list[guano_chain_length]
-
+    
         v_x, v_z = get_xz_vel_fp32(linear_velocity=2, movement_angle=movement_angle)
         updated_x_pos = np.float32( np.float32(x_pos) + np.float32( np.float32(v_x) * np.float32(VELOCITY_SCALE) ) ) + np.float32( np.float32(v_x) * np.float32(VELOCITY_SCALE) )
         updated_z_pos = np.float32( np.float32(z_pos) + np.float32( np.float32(v_z) * np.float32(VELOCITY_SCALE) ) ) + np.float32( np.float32(v_z) * np.float32(VELOCITY_SCALE) )
     guano_chain_must_be_reset = False
     camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)]
-    if abs(movement_angle - camera_angle) < 0x07: # really I could check for equality I think, but this is just playing it safe
+    if left:
+        cardinal = (camera_angle + 0x4000) % TOTAL_ANGLES
+    else:
+        cardinal = (camera_angle - 0x4000) % TOTAL_ANGLES
+    if abs( (movement_angle - cardinal) % TOTAL_ANGLES) < 0x07: # really I could check for equality I think, but this is just playing it safe
         guano_chain_must_be_reset = True
+    print(f"{x_pos=}, {x_pos=}, {hex(angle)=}, {guano_chain_length=}, {left=}, {hex(movement_angle)=}, {updated_x_pos=}, {updated_z_pos=}, {hex(camera_angle)=}, {guano_chain_must_be_reset=}, {hex((movement_angle - camera_angle)%TOTAL_ANGLES)=}, {hex(cardinal)=}\n")
+    print(f"{[hex(a) for a in movement_angle_list]=}")
     return updated_x_pos, updated_z_pos, angle, guano_chain_must_be_reset
 
 def shield_scoot_forward(x_pos, z_pos, angle, fp32=True): # TODO
@@ -802,6 +830,7 @@ def get_xz_vel(linear_velocity, movement_angle):
     z_velocity = linear_velocity * Math_CosS(movement_angle)
     return (x_velocity, z_velocity)
 
+MAX_EXTRA_WALK_FRAMES_FOR_CLIP = 75
 def reverse_clip_position(x_position, z_position, clip_movement_angle):
     """
     `clip_movement_angle` is the movement angle at linear velocity 9.94054. 
@@ -821,7 +850,7 @@ def reverse_clip_position(x_position, z_position, clip_movement_angle):
         walking_movement_angle = previous_movement_angles[6]
         linear_velocity_8_movement_angle = previous_movement_angles[8]
 
-        for extra_walk_frames in range(76):
+        for extra_walk_frames in range(MAX_EXTRA_WALK_FRAMES_FOR_CLIP+1):
             cumulative_walking_linear_velocity = 18 + 6 * extra_walk_frames # (2 + 4 + 6 + 6 + 6*extra_walk_frames) @ walking movement angle
             cumulative_walking_x_velocity, cumulative_walking_z_velocity = get_xz_vel(linear_velocity=cumulative_walking_linear_velocity, movement_angle=walking_movement_angle)
 
@@ -1252,7 +1281,7 @@ MAX_REACH_PER_COST = max(
 print(f"{MAX_REACH_PER_COST=}")
 ############## from claude ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-MAX_COST = 3 # 10
+MAX_COST = 7 # 10
 MAX_ESS_TURNS = 8 # e.g. -8, -7, ..., -1, 1, ..., 7, 8 (i.e. do negative and positive but skip 0)
 ESS_OPTIONS = [a for a in range(-MAX_ESS_TURNS, MAX_ESS_TURNS+1) if a != 0]
 MAX_DEKU_SPINS_IN_PLACE = 3
@@ -1349,7 +1378,7 @@ def find_solutions(x0, z0, a0, filename):
                         new_guano_chain_length = 0
                     else:
                         new_guano_chain_length = guano_chain_length + 1
-                    action_log.append(f"{movement_option}" + position_str(x=new_x, z=new_z, angle=new_a))
+                    action_log.append(f"{movement_option} [CHAIN LENGTH: {guano_chain_length}]" + position_str(x=new_x, z=new_z, angle=new_a))
                     dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=new_guano_chain_length, action_log=action_log, cost=cost+MovementCosts[movement_option])
                     action_log.pop()
                 elif movement_option == "ShieldScootForward":
@@ -1373,11 +1402,16 @@ def find_solutions(x0, z0, a0, filename):
 
             
     dfs(x=x0, z=z0, a=a0, angle_turn=True, guano_chain_length=0, action_log=[], cost=0)
-
+    return success_count[0], failure_count[0]
 x0 = np.float32(-70)
 z0 = np.float32(209.75)
 a0 = 0x0000
 filename = "cmg-solutions-test0.txt"
-find_solutions(x0, z0, a0, filename)
+# t0 = time.time()
+# s, f = find_solutions(x0, z0, a0, filename)
+# t1 = time.time()
+#print(f"Successes: {s}, Failures: {f} in {t1-t0:.2f} seconds")
 
-
+x_pos, z_pos, angle = ess_turn(x_pos=x0, z_pos=z0, angle=a0, num_turns=-5)
+print(f"{x_pos=}, {z_pos=}, {angle=}")
+x, z, a, _ = guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True)
