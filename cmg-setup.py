@@ -83,7 +83,9 @@ class ZXRegion:
         """Human-readable parameters, e.g. 'movement angle 0x4A30, 12 walking steps'."""
         if self.movement_angle is None:
             return self.name
-        return f"movement angle {hex(self.movement_angle)}, {self.walking_steps} walking steps"
+
+        valid_walking_angles = [x[6] for x in ClipMovementAngleToPreviousMovementAngles[self.movement_angle]]
+        return f"CLIP MOVEMENT ANGLE: {hex(self.movement_angle)}\nEXTRA WALKING STEPS: {self.walking_steps}\nVALID (TARGETED) WALKING CAMERA ANGLES: {valid_walking_angles}"
 
     def __repr__(self):
         return f"ZXRegion({self.name!r}, {self.describe()})"
@@ -1175,7 +1177,7 @@ def log_solution(x0, z0, a0, sol_x, sol_z, sol_a, action_log, filename, matches)
         f.write(f"Solution Position: {position_str(sol_x, sol_z, sol_a)}\n")
         f.write(f"Initial Position: {position_str(x0, z0, a0)}\n")
         for m in matches:
-            f.write(f"NEEDS: {m.describe()}  ({m.name})\n")
+            f.write(f"{m.describe()}\nCSV filename: {m.name}\n")
         for action in action_log:
             f.write(f"    {action}\n")
         
@@ -1250,7 +1252,7 @@ MAX_REACH_PER_COST = max(
 print(f"{MAX_REACH_PER_COST=}")
 ############## from claude ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-MAX_COST = 10 # 10
+MAX_COST = 3 # 10
 MAX_ESS_TURNS = 8 # e.g. -8, -7, ..., -1, 1, ..., 7, 8 (i.e. do negative and positive but skip 0)
 ESS_OPTIONS = [a for a in range(-MAX_ESS_TURNS, MAX_ESS_TURNS+1) if a != 0]
 MAX_DEKU_SPINS_IN_PLACE = 3
@@ -1342,9 +1344,13 @@ def find_solutions(x0, z0, a0, filename):
                     dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=0, action_log=action_log, cost=cost+MovementCosts[movement_option])
                     action_log.pop()
                 elif movement_option in {"GuanoShieldScootLeft", "GuanoShieldScootRight"}:
-                    new_x, new_z, new_a = guano_shield_scoot(x_pos=x, z_pos=z, angle=a, guano_chain_length=guano_chain_length, left=movement_option=="GuanoShieldScootLeft")
+                    new_x, new_z, new_a, must_reset_guano_chain = guano_shield_scoot(x_pos=x, z_pos=z, angle=a, guano_chain_length=guano_chain_length, left=movement_option=="GuanoShieldScootLeft")
+                    if must_reset_guano_chain:
+                        new_guano_chain_length = 0
+                    else:
+                        new_guano_chain_length = guano_chain_length + 1
                     action_log.append(f"{movement_option}" + position_str(x=new_x, z=new_z, angle=new_a))
-                    dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=guano_chain_length+1, action_log=action_log, cost=cost+MovementCosts[movement_option])
+                    dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=new_guano_chain_length, action_log=action_log, cost=cost+MovementCosts[movement_option])
                     action_log.pop()
                 elif movement_option == "ShieldScootForward":
                     new_x, new_z, new_a = shield_scoot_forward(x_pos=x, z_pos=z, angle=a)
@@ -1371,7 +1377,7 @@ def find_solutions(x0, z0, a0, filename):
 x0 = np.float32(-70)
 z0 = np.float32(209.75)
 a0 = 0x0000
-filename = "cmg-solutions-test.txt"
+filename = "cmg-solutions-test0.txt"
 find_solutions(x0, z0, a0, filename)
 
 
