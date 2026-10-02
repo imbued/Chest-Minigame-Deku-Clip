@@ -1,6 +1,6 @@
 # Chest-Minigame-Deku-Clip
 
-This script was used to find cmg deku clip setups like this one https://www.youtube.com/watch?v=8tuBC-LZq2k
+This script was used to find cmg deku clip setups like this one https://www.youtube.com/watch?v=8tuBC-LZq2k by running cmg-setup.py which simulates movements in the game. This script is very hacky and I'm aware of how unclean this repo is and how incomplete this readme is, but this readme is better than nothing.
 
 This script assumes flat ground and takes a fair bit of camera information into account with the help of data obtained from running lua scripts at different angles (e.g. stuff like this is accounted for: https://pastebin.com/ChE1SwuF). This script is much more accurate than previous scripts of this style that I've done for multiple reasons. For example, I took the lookup table from decomp for sine/cosine computations, also I used fp32 for calculations which is what the game does, and lookup tables I created for various movements at different angles using lua scripts to collect data. This biggest limitation of my approach is that you cannot do movement options that collide with walls or even some that get too close to walls as this can change the camera angle in a way that depends not only on your angle but also your position. In principle, a position-dependent lookup table could be created, but it'd take a lot of additional lua script testing and research. 
 
