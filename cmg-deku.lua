@@ -232,31 +232,80 @@ function hold_backflip(addresses)
     return values
 end
 
-function hold_deku_spin(target, addresses)
-    --- `target` is a boolean, True if we hold target while holding up and pressing A, False other
+--- edit: I feel like holding target vs not holding target is kinda fake? like seems to not really matter? though i didn't inspect the data super heavily
+-- function hold_deku_spin(target, addresses)
+--     --- `target` is a boolean, True if we hold target while holding up and pressing A, False other
+--     local control_stick
+--     control_stick = 127
+
+--     local values = {}
+--     -- hold target for at least 6 frames before doing anything else
+--     append_values(values, v_advance(
+--         6,
+--         {["Z"] = true},
+--         addresses
+--     ))
+--     append_values(values, v_advance(
+--         1,
+--         {["Z"] = target, ["A"] = true, ["Y Axis"] = control_stick},
+--         addresses
+--     ))
+--     append_values(values, v_advance(
+--         20,
+--         {["Z"] = target, ["R"] = true, ["Y Axis"] = control_stick},
+--         addresses
+--     ))
+
+--     return values
+-- end
+
+function hold_deku_spin(direction, turn_first, addresses)
+    --- `direction` is "left", "right", "down", "up". If "down", then `turn_first` MUST be true. if "up" then `turn_first` MUST be false.
+    --- `turn_first` is a boolean, if True we e..g tap left to turn (but do NOT target) before doing the spin. this give a bit of a different spin trajectory
     local control_stick
-    control_stick = 127
+    if direction == "right" or direction == "up" then
+        control_stick = 127
+    elseif direction == "left" or direction == "down" then
+        control_stick = -128
+    else
+        assert(false, "this should be impossible")
+    end
+
+    if direction == "down" then
+        assert(turn_first == true, "`turn_first` must be true if going down")
+    end
+    if direction == "up" then
+        assert(turn_first == false, "`turn_first` must be false if going up")
+    end
+
+    if direction == "up" or direction == "down" then
+        axis = "Y Axis"
+    elseif direction == "left" or direction == "right" then
+        axis = "X Axis"
+    else
+        assert(false, "this should be impossible!")
+    end
 
     local values = {}
-    -- hold target for at least 6 frames before doing anything else
-    append_values(values, v_advance(
-        6,
-        {["Z"] = true},
-        addresses
-    ))
+    append_values(values, target_and_untarget_and_let_camera_snap(addresses)) -- let's camera snap to e.g. cardinal angle if applicable
+    if turn_first then
+        append_values(values, v_advance(1, {[axis] = control_stick}, addresses))
+    end
+
     append_values(values, v_advance(
         1,
-        {["Z"] = target, ["A"] = true, ["Y Axis"] = control_stick},
+        {["A"] = true, [axis] = control_stick},
         addresses
     ))
     append_values(values, v_advance(
         20,
-        {["Z"] = target, ["R"] = true, ["Y Axis"] = control_stick},
+        {["R"] = true, [axis] = control_stick},
         addresses
     ))
 
     return values
 end
+
 
 function guanowalk(left, addresses)
     --- `left` is a boolean, if true then sidehop left if false then sidehop right
@@ -280,6 +329,44 @@ function guanowalk(left, addresses)
         addresses
     ))
 
+    return values
+end
+
+function get_address(name) -- this is so stupid, but whatever
+    for _, entry in ipairs(addresses) do
+        if entry["name"] == name then
+            return entry
+        end
+    end
+end
+function target_and_untarget_and_let_camera_snap(addresses)
+    --- we want to target, then untarget and wait for the camera angle to settle (important because some camera angle snap to cardinal directions)
+    local values = {}
+    -- hold target for at least 6 frames before doing anything else
+    append_values(values, v_advance(
+        6,
+        {["Z"] = true},
+        addresses
+    ))
+    local old_cam
+    local new_cam
+    old_cam = read_memory(get_address("Camera Angle"))
+    append_values(values, v_advance(
+        10,
+        {},
+        addresses
+    ))
+    new_cam = read_memory(get_address("Camera Angle"))
+    while old_cam ~= new_cam do
+        append_values(values, v_advance(
+            10,
+            {},
+            addresses
+        ))
+        old_cam = new_cam
+        new_cam = read_memory(get_address("Camera Angle"))
+    end
+    
     return values
 end
 
@@ -327,15 +414,23 @@ end
 movements = {
     -- "hold_sidehop_left",
     -- "hold_sidehop_right",
-    "guanowalk_left",
+    ---"guanowalk_left",
     -- "hold_backflip",
     -- "hold_deku_spin_targeted",
     -- "hold_deku_spin_untargeted",
-    "guanowalk_right",
+    -- "guanowalk_right",
+    -- "target_and_untarget_and_let_camera_snap",
+    ---"hold_deku_spin_right",
+    ---"hold_deku_spin_right_turn_first",
+    ---"hold_deku_spin_left",
+    ---"hold_deku_spin_left_turn_first",
+    ---"hold_deku_spin_down_turn_first",
+    "hold_deku_spin_up", --- this can replace hold_deku_spin_untargeted
+
 }
 
 for _, movement in ipairs(movements) do
-    local filename = movement .. ".csv"
+    local filename = movement .. "--0xC000-0xFFFF.csv"
     initialize_csv(filename, addresses)
 
     --for initial_angle = 0x0000, 0xFFF0, 0x10 do
@@ -351,14 +446,28 @@ for _, movement in ipairs(movements) do
             values = hold_sidehop(false, addresses)
         elseif movement == "hold_backflip" then
             values = hold_backflip(addresses)
-        elseif movement == "hold_deku_spin_targeted" then
-            values = hold_deku_spin(true, addresses)
-        elseif movement == "hold_deku_spin_untargeted" then
-            values = hold_deku_spin(false, addresses)
+        -- elseif movement == "hold_deku_spin_targeted" then
+        --     values = hold_deku_spin(true, addresses)
+        -- elseif movement == "hold_deku_spin_untargeted" then
+        --     values = hold_deku_spin(false, addresses)
+        elseif movement == "hold_deku_spin_right" then
+            values = hold_deku_spin("right", false, addresses)
+        elseif movement == "hold_deku_spin_right_turn_first" then
+            values = hold_deku_spin("right", true, addresses)
+        elseif movement == "hold_deku_spin_left" then
+            values = hold_deku_spin("left", false, addresses)
+        elseif movement == "hold_deku_spin_left_turn_first" then
+            values = hold_deku_spin("left", true, addresses)
+        elseif movement == "hold_deku_spin_down_turn_first" then
+            values = hold_deku_spin("down", true, addresses)
+        elseif movement == "hold_deku_spin_up" then
+            values = hold_deku_spin("up", false, addresses)
         elseif movement == "guanowalk_left" then
             values = guanowalk(true, addresses)
         elseif movement == "guanowalk_right" then
             values = guanowalk(false, addresses)
+        elseif movement == "target_and_untarget_and_let_camera_snap" then
+            values = target_and_untarget_and_let_camera_snap(addresses)
         end
         append_values_to_csv(
             filename,

@@ -232,31 +232,81 @@ function hold_backflip(addresses)
     return values
 end
 
-function hold_deku_spin(target, addresses)
-    --- `target` is a boolean, True if we hold target while holding up and pressing A, False other
+--- edit: I feel like holding target vs not holding target is kinda fake? like seems to not really matter? though i didn't inspect the data super heavily
+-- function hold_deku_spin(target, addresses)
+--     --- `target` is a boolean, True if we hold target while holding up and pressing A, False other
+--     local control_stick
+--     control_stick = 127
+
+--     local values = {}
+--     -- hold target for at least 6 frames before doing anything else
+--     append_values(values, v_advance(
+--         6,
+--         {["Z"] = true},
+--         addresses
+--     ))
+--     append_values(values, v_advance(
+--         1,
+--         {["Z"] = target, ["A"] = true, ["Y Axis"] = control_stick},
+--         addresses
+--     ))
+--     append_values(values, v_advance(
+--         20,
+--         {["Z"] = target, ["R"] = true, ["Y Axis"] = control_stick},
+--         addresses
+--     ))
+
+--     return values
+-- end
+
+
+function hold_deku_spin(direction, turn_first, addresses)
+    --- `direction` is "left", "right", "down", "up". If "down", then `turn_first` MUST be true. if "up" then `turn_first` MUST be false.
+    --- `turn_first` is a boolean, if True we e..g tap left to turn (but do NOT target) before doing the spin. this give a bit of a different spin trajectory
     local control_stick
-    control_stick = 127
+    if direction == "right" or direction == "up" then
+        control_stick = 127
+    elseif direction == "left" or direction == "down" then
+        control_stick = -128
+    else
+        assert(false, "this should be impossible")
+    end
+
+    if direction == "down" then
+        assert(turn_first == true, "`turn_first` must be true if going down")
+    end
+    if direction == "up" then
+        assert(turn_first == false, "`turn_first` must be false if going up")
+    end
+
+    if direction == "up" or direction == "down" then
+        axis = "Y Axis"
+    elseif direction == "left" or direction == "right" then
+        axis = "X Axis"
+    else
+        assert(false, "this should be impossible!")
+    end
 
     local values = {}
-    -- hold target for at least 6 frames before doing anything else
-    append_values(values, v_advance(
-        6,
-        {["Z"] = true},
-        addresses
-    ))
+    append_values(values, target_and_untarget_and_let_camera_snap(addresses)) -- let's camera snap to e.g. cardinal angle if applicable
+    if turn_first then
+        append_values(values, v_advance(1, {[axis] = control_stick}, addresses))
+    end
+
     append_values(values, v_advance(
         1,
-        {["Z"] = target, ["A"] = true, ["Y Axis"] = control_stick},
+        {["A"] = true, [axis] = control_stick},
         addresses
     ))
     append_values(values, v_advance(
         20,
-        {["Z"] = target, ["R"] = true, ["Y Axis"] = control_stick},
+        {["R"] = true, [axis] = control_stick},
         addresses
     ))
 
     return values
 end
+
 
 function guanowalk(left, addresses)
     --- `left` is a boolean, if true then sidehop left if false then sidehop right
@@ -285,7 +335,13 @@ function guanowalk(left, addresses)
     return values
 end
 
-
+function get_address(name) -- this is so stupid, but whatever
+    for _, entry in ipairs(addresses) do
+        if entry["name"] == name then
+            return entry
+        end
+    end
+end
 function guano_shield_scoot(left, reset_chain, addresses)
     --- `left` is a boolean, if true then sidehop left if false then sidehop right
     --- `reset_chain` is a boolean, if true then we do an unshielded target at the start to reset the movement angle
@@ -381,9 +437,8 @@ function shield_scoot_forward(addresses)
     return values
 end
 
-
-function cardinal_turn(direction, addresses)
-    --- `left` is a boolean, if true then sidehop left if false then sidehop right
+function target_and_untarget_and_let_camera_snap(addresses)
+    --- we want to target, then untarget and wait for the camera angle to settle (important because some camera angle snap to cardinal directions)
     local values = {}
     -- hold target for at least 6 frames before doing anything else
     append_values(values, v_advance(
@@ -391,6 +446,34 @@ function cardinal_turn(direction, addresses)
         {["Z"] = true},
         addresses
     ))
+    local old_cam
+    local new_cam
+    old_cam = read_memory(get_address("Camera Angle"))
+    append_values(values, v_advance(
+        10,
+        {},
+        addresses
+    ))
+    new_cam = read_memory(get_address("Camera Angle"))
+    while old_cam ~= new_cam do
+        append_values(values, v_advance(
+            10,
+            {},
+            addresses
+        ))
+        old_cam = new_cam
+        new_cam = read_memory(get_address("Camera Angle"))
+    end
+    
+    return values
+end
+
+
+function cardinal_turn(direction, addresses)
+    --- `left` is a boolean, if true then sidehop left if false then sidehop right
+    local values = {}
+    -- hold target for at least 6 frames before doing anything else
+    append_values(values, target_and_untarget_and_let_camera_snap(addresses)) -- let's camera snap to e.g. cardinal angle if applicable
     append_values(values, v_advance(
         1,
         {},
@@ -428,7 +511,6 @@ function cardinal_turn(direction, addresses)
         {["Z"] = true},
         addresses
     ))
-    print("cardinal done!!!!!!!!!!!!")
     return values
 end
 
@@ -478,28 +560,56 @@ function ess_turn(left, num_turns, addresses)
 end
 
 
-function deku_spin_in_place(left, addresses)
-    --- `left` is a boolean, if true then sidehop left if false then sidehop right
-    local control_stick
-    if left then
-        control_stick = -128
-    else
-        control_stick = 127
-    end
+-- function deku_spin_in_place(left, addresses)
+--     --- `left` is a boolean, if true then sidehop left if false then sidehop right
+--     local control_stick
+--     if left then
+--         control_stick = -128
+--     else
+--         control_stick = 127
+--     end
 
+--     local values = {}
+--     -- hold target for at least 6 frames before doing anything else
+--     append_values(values, v_advance(
+--         6,
+--         {["Z"] = true},
+--         addresses
+--     ))
+--     append_values(values, v_advance(
+--         22, -- 21 is prob sufficient, just being safe
+--         {["A"] = true},
+--         addresses
+--     ))
+--     append_values(values, v_advance( -- targeting to setup nicely for other movements, just to be safe
+--         6,
+--         {["Z"] = true},
+--         addresses
+--     ))
+--     return values
+-- end
+
+function deku_spin_in_place(num_spins, addresses)
     local values = {}
-    -- hold target for at least 6 frames before doing anything else
     append_values(values, v_advance(
-        6,
-        {["Z"] = true},
-        addresses
-    ))
+            30, -- idk how big this needs to be, but didn't have this before and got issues with spin in place after hold backflip
+            {},
+            addresses
+        ))
+    for i = 1, num_spins do
+        append_values(values, v_advance(
+            6,
+            {["Z"] = true},
+            addresses
+        ))
+
+        append_values(values, v_advance(
+            22,
+            {["A"] = true},
+            addresses
+        ))
+    end
     append_values(values, v_advance(
-        22, -- 21 is prob sufficient, just being safe
-        {["A"] = true},
-        addresses
-    ))
-    append_values(values, v_advance( -- targeting to setup nicely for other movements, just to be safe
         6,
         {["Z"] = true},
         addresses
@@ -644,67 +754,79 @@ end
 
 solution_filename = "cmg-solution.txt"
 movements = parse_movements(solution_filename)
+do_entire_setup = true -- true
 
-itools.load_state(8)
+if do_entire_setup then
+    itools.load_state(8)
+    v_advance(6, {}, addresses)
+    --itools.load_state(9)
+    for _, movement in ipairs(movements) do
 
-for _, movement in ipairs(movements) do
+        if movement.action == "ESS Turns" then
+            ess_turn(movement.argument > 0, math.abs(movement.argument), addresses)
+        
+        elseif movement.action == "Deku Spins In Place" then
+            deku_spin_in_place(movement.argument, addresses)
 
-    if movement.action == "ESS Turns" then
-        ess_turn(movement.argument > 0, math.abs(movement.argument), addresses)
+        elseif movement.action == "HoldSidehopLeft" then
+            hold_sidehop(true, addresses)
 
-    elseif movement.action == "HoldSidehopLeft" then
-        hold_sidehop(true, addresses)
+        elseif movement.action == "HoldSidehopRight" then
+            hold_sidehop(false, addresses)
 
-    elseif movement.action == "HoldSidehopRight" then
-        hold_sidehop(false, addresses)
+        elseif movement.action == "HoldBackflip" then
+            hold_backflip(addresses)
 
-    elseif movement.action == "HoldBackflip" then
-        hold_backflip(addresses)
+        -- elseif movement.action == "HoldDekuSpinTargeted" then
+        --     hold_deku_spin(true, addresses)
 
-    elseif movement.action == "HoldDekuSpinTargeted" then
-        hold_deku_spin(true, addresses)
+        -- elseif movement.action == "HoldDekuSpinUntargeted" then
+        --     hold_deku_spin(false, addresses)
+        elseif movement.action == "HoldDekuSpinRight" then
+            hold_deku_spin("right", false, addresses)
+        elseif movement.action == "HoldDekuSpinRightTurnFirst" then
+            hold_deku_spin("right", true, addresses)
+        elseif movement.action == "HoldDekuSpinLeft" then
+            hold_deku_spin("left", false, addresses)
+        elseif movement.action == "HoldDekuSpinLeftTurnFirst" then
+            hold_deku_spin("left", true, addresses)
+        elseif movement.action == "HoldDekuSpinDownTurnFirst" then
+            hold_deku_spin("down", true, addresses)
+        elseif movement.action == "HoldDekuSpinUp" then
+            hold_deku_spin("up", false, addresses)
+        elseif movement.action == "Cardinal Turn" then
+            if movement.argument == "LEFT" then
+                cardinal_turn("LEFT", addresses)
+            elseif movement.argument == "RIGHT" then
+                cardinal_turn("RIGHT", addresses)
+            elseif movement.argument == "DOWN" then
+                cardinal_turn("DOWN", addresses)
+            end
 
-    elseif movement.action == "HoldDekuSpinUntargeted" then
-        hold_deku_spin(false, addresses)
+        elseif movement.action == "ShieldScootForward" then
+            shield_scoot_forward(addresses)
 
-    elseif movement.action == "Cardinal Turn" then
-        if movement.argument == "LEFT" then
-            cardinal_turn("LEFT", addresses)
-        elseif movement.argument == "RIGHT" then
-            cardinal_turn("RIGHT", addresses)
-        elseif movement.argument == "DOWN" then
-            cardinal_turn("DOWN", addresses)
+        -- elseif movement.action == "ResetGuanoChain" then
+        --     reset
+
+        elseif movement.action == "GuanoShieldScootLeft" then
+            if movement.argument > 0 then
+                reset_chain = false
+            elseif movement.argument == 0 then
+                reset_chain = true
+            end
+            guano_shield_scoot(true, reset_chain, addresses)
+
+        elseif movement.action == "GuanoShieldScootRight" then
+            if movement.argument > 0 then
+                reset_chain = false
+            elseif movement.argument == 0 then
+                reset_chain = true
+            end
+            guano_shield_scoot(false, reset_chain, addresses)
+
         end
 
-    elseif movement.action == "ShieldScootForward" then
-        shield_scoot_forward(addresses)
-
-    elseif movement.action == "GuanoShieldScootLeft" then
-        if movement.argument > 0 then
-            reset_chain = false
-        elseif movement.argument == 0 then
-            reset_chain = true
-        end
-        guano_shield_scoot(true, reset_chain, addresses)
-
-    elseif movement.action == "GuanoShieldScootRight" then
-        if movement.argument > 0 then
-            reset_chain = false
-        elseif movement.argument == 0 then
-            reset_chain = true
-        end
-        guano_shield_scoot(false, reset_chain, addresses)
-
-    end
-
-end
-
-
-function get_address(name) -- this is so stupid, but whatever
-    for _, entry in ipairs(addresses) do
-        if entry["name"] == name then
-            return entry
-        end
     end
 end
 
@@ -715,6 +837,33 @@ print("  Angle: 0x" .. string.format("%04X", read_memory(get_address("Angle"))))
 print("  Camera Angle: 0x" .. string.format("%04X", read_memory(get_address("Camera Angle"))))
 
 
+extra_walking_frames = 69 --34 --59
+-- cardinal_turn("DOWN", addresses)
+-- itools.clear_inputs()
+-- v_advance(
+--         25,
+--         {["A"] = true},
+--         addresses
+--     )
+
+-- itools.clear_inputs()
+-- v_advance(
+--         6,
+--         {["Z"] = true},
+--         addresses
+--     )
+-- itools.clear_inputs()
+-- v_advance(
+--         4+extra_walking_frames,
+--         {["Z"] = true, ["Y Axis"]=127},
+--         addresses
+--     )
+-- itools.clear_inputs()
+-- v_advance(
+--         10,
+--         {["Y Axis"]=127, ["A"]=true},
+--         addresses
+--     )
 
 
 -- movements = {
