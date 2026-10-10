@@ -289,6 +289,7 @@ function hold_deku_spin(direction, turn_first, addresses)
 
     local values = {}
     append_values(values, target_and_untarget_and_let_camera_snap(addresses)) -- let's camera snap to e.g. cardinal angle if applicable
+    append_values(values, v_advance(21, {}, addresses)) --- maybe this placement is better? since i think after guano scoot it mattered?
     if turn_first then
         append_values(values, v_advance(1, {[axis] = control_stick}, addresses))
     end
@@ -303,7 +304,8 @@ function hold_deku_spin(direction, turn_first, addresses)
         {["R"] = true, [axis] = control_stick},
         addresses
     ))
-
+    append_values(values, target_and_untarget_and_let_camera_snap(addresses)) -- let's camera snap to e.g. cardinal angle if applicable
+    ----append_values(values, v_advance(21, {}, addresses)) -- is this needed? keep adding until you don't get inconsistencies? edit: this is actually insane, it seems you need to wait 21 frames between deku spins???????????
     return values
 end
 
@@ -506,11 +508,12 @@ function cardinal_turn(direction, addresses)
         ))
     end
     -- target at the very end just to set up nicely for any future movements outside of the context of this function
-    append_values(values, v_advance(
-        6,
-        {["Z"] = true},
-        addresses
-    ))
+    -- append_values(values, v_advance(
+    --     6,
+    --     {["Z"] = true},
+    --     addresses
+    -- ))
+    append_values(values, target_and_untarget_and_let_camera_snap(addresses)) -- let's camera snap to e.g. cardinal angle if applicable -- maybe this setups up nicely for future movements better!
     return values
 end
 
@@ -836,35 +839,163 @@ print("  Z Position: " .. read_memory(get_address("Z Position")))
 print("  Angle: 0x" .. string.format("%04X", read_memory(get_address("Angle"))))
 print("  Camera Angle: 0x" .. string.format("%04X", read_memory(get_address("Camera Angle"))))
 
+do_walk = false
+if do_walk then
+    extra_walking_frames = 51 --49 --34 --59
+    -- cardinal_turn("DOWN", addresses)
+    -- itools.clear_inputs()
+    -- v_advance(
+    --         25,
+    --         {["A"] = true},
+    --         addresses
+    --     )
 
-extra_walking_frames = 69 --34 --59
--- cardinal_turn("DOWN", addresses)
--- itools.clear_inputs()
--- v_advance(
---         25,
---         {["A"] = true},
---         addresses
---     )
+    itools.clear_inputs()
+    v_advance(
+            6,
+            {["Z"] = true},
+            addresses
+        )
+    itools.clear_inputs()
+    v_advance(
+            4+extra_walking_frames,
+            {["Z"] = true, ["Y Axis"]=127},
+            addresses
+        )
+    itools.clear_inputs()
+    v_advance(
+            10,
+            {["Y Axis"]=127, ["A"]=true},
+            addresses
+        )
+end
 
--- itools.clear_inputs()
--- v_advance(
---         6,
---         {["Z"] = true},
---         addresses
---     )
--- itools.clear_inputs()
--- v_advance(
---         4+extra_walking_frames,
---         {["Z"] = true, ["Y Axis"]=127},
---         addresses
---     )
--- itools.clear_inputs()
--- v_advance(
---         10,
---         {["Y Axis"]=127, ["A"]=true},
---         addresses
---     )
+custom_setup = false
+if custom_setup then
+    itools.load_state(8)
+    v_advance(3, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(20, {['R']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(2, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(20, {['R']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(3, {['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['R']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(42, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(20, {['R']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(6, {['Z']=true}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['Y Axis']=-128}, addresses)
+    itools.clear_inputs()
+    v_advance(6, {['Z']=true}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['Z']=true, ['A']=true, ['Y Axis']=-128}, addresses)
+    itools.clear_inputs()
+    v_advance(12, {['Z']=true, ['R']=true, ['Y Axis']=-128}, addresses)
+    itools.clear_inputs()
+    v_advance(4, {}, addresses)
+    itools.clear_inputs()
+    v_advance(14, {['C Up']=true, ['X Axis']=-127}, addresses)
+    itools.clear_inputs()
+    v_advance(3, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true}, addresses)
+    itools.clear_inputs()
+    v_advance(40, {['Y Axis']=-20}, addresses)
+    itools.clear_inputs()
+    v_advance(10, {['X Axis']=20}, addresses)
+    itools.clear_inputs()
+    v_advance(6, {['Z']=6}, addresses)
+    itools.clear_inputs()
+    v_advance(53, {["Z"] = true, ["Y Axis"]=127}, addresses)
+    itools.clear_inputs()
+    v_advance(10,{["Y Axis"]=127, ["A"]=true}, addresses)
 
+end
+
+custom_setup2 = false
+if custom_setup2 then
+    itools.load_state(8)
+    v_advance(3, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(2, {['R']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(5, {['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['R']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(4, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(20, {['R']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(2, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(20, {['R']=true, ['Y Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(2, {}, addresses)
+    v_advance(1, {['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(36, {}, addresses)--v_advance(42, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(20, {['R']=true, ['X Axis']=127}, addresses)
+    itools.clear_inputs()
+    v_advance(6, {['Z']=true}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['Y Axis']=-128}, addresses)
+    itools.clear_inputs()
+    v_advance(6, {['Z']=true}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['Z']=true, ['A']=true, ['Y Axis']=-128}, addresses)
+    itools.clear_inputs()
+    v_advance(12, {['Z']=true, ['R']=true, ['Y Axis']=-128}, addresses)
+    itools.clear_inputs()
+    v_advance(4, {}, addresses)
+    itools.clear_inputs()
+    v_advance(14, {['C Up']=true, ['X Axis']=-127}, addresses)
+    itools.clear_inputs()
+    v_advance(3, {}, addresses)
+    itools.clear_inputs()
+    v_advance(1, {['A']=true}, addresses)
+    itools.clear_inputs()
+    v_advance(40, {['Y Axis']=-20}, addresses)
+    itools.clear_inputs()
+    v_advance(10, {['X Axis']=20}, addresses)
+    itools.clear_inputs()
+    v_advance(6, {['Z']=6}, addresses)
+    itools.clear_inputs()
+    v_advance(53, {["Z"] = true, ["Y Axis"]=127}, addresses)
+    itools.clear_inputs()
+    v_advance(10,{["Y Axis"]=127, ["A"]=true}, addresses)
+
+end
 
 -- movements = {
 --     -- "hold_sidehop_left",

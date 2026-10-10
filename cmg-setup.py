@@ -421,8 +421,8 @@ def _read_sorted_by_frame(filename):
     if data.duplicated(["Initial Angle", "Frame"]).any():
         raise ValueError(f"{filename}: repeated (Initial Angle, Frame) rows")
     frame_sets = data.groupby("Initial Angle", sort=False)["Frame"].agg(tuple)
-    if frame_sets.nunique() != 1:
-        raise ValueError(f"{filename}: angle bins don't all record the same frames (runs cut short?)")
+    # if frame_sets.nunique() != 1:
+    #     raise ValueError(f"{filename}: angle bins don't all record the same frames (runs cut short?)")
     return data
 
 
@@ -465,8 +465,11 @@ def preprocess_csv(filename, fp32=True):
                 "Final Angle" : _to_int(last_row["Angle"]),
                 "Final Camera Angle" : _to_int(last_row["Camera Angle"]),
             }
-
-    _check_all_bins(cache.keys(), filename)
+        
+    if filename in ["hold_deku_spin_left.csv", "hold_deku_spin_left_turn_first.csv", "hold_deku_spin_right.csv", "hold_deku_spin_right_turn_first.csv", "hold_deku_spin_down_turn_first.csv", "hold_deku_spin_up.csv"]:
+        _check_all_angles(cache.keys(), filename) # extremely important that we check all 65536 angles in this case
+    else:
+        _check_all_bins(cache.keys(), filename)
     return cache
 
 
@@ -491,7 +494,8 @@ def preprocess_guano_movement_angles_csv(filename="guanowalk_left.csv"):
 
     for initial_angle_str, rows in data.groupby("Initial Angle", sort=False):
         # it is important that we start on frame 8 because previous movement angles in the data aren't updated yet
-        late = rows.loc[rows["Frame"] >= 8 and rows["Linear Velocity"] > 0, "Movement Angle"] # Sometimes it starts on frame 8, but sometimes frame 9 if linear velocity was 0 on frame 8 -- cardinal guanowalks take 1 extra frame to start
+        ##late = rows.loc[rows["Frame"] >= 8 and rows["Linear Velocity"] > 0, "Movement Angle"] # Sometimes it starts on frame 8, but sometimes frame 9 if linear velocity was 0 on frame 8 -- cardinal guanowalks take 1 extra frame to start
+        late = rows.loc[(rows["Frame"] >= 8) & (rows["Linear Velocity"] > 0), "Movement Angle"]
         cache[_to_int(initial_angle_str)] = [_to_int(a) for a in late] # list of all movement angles once they start updating 
 
     _check_all_angles(cache.keys(), filename) # extremely important that we check all 65536 angles in this case
@@ -513,6 +517,26 @@ def preprocess_targeted_camera_angles(filename="hold_sidehop_left.csv"):
         if row["Frame"] != 6:
             raise ValueError(f"wrong data!!!")
         cache[_to_int(initial_angle_str)] = _to_int(row["Camera Angle"])
+
+    _check_all_bins(cache.keys(), filename)
+    return cache
+
+def preprocess_untargeted_camera_angle_after_targeting(filename="target_and_untarget_and_let_camera_snap.csv"):
+    """
+    e.g. if I have angle 0x3C00 and press target, while holding target my camera angle is 0x3C0F, but if I release
+    target, then the camera angle will eventually snap to 0x4000 (takes several frames though)
+    """
+    if filename != "target_and_untarget_and_let_camera_snap.csv":
+        raise ValueError(f"{filename=}")
+    data = _read_sorted_by_frame(filename)
+    
+    cache = {}
+
+    for initial_angle_str, rows in data.groupby("Initial Angle", sort=False):
+        last_row = rows.iloc[-1]
+        if last_row["Frame"] != rows["Frame"].max():
+            raise ValueError(f"{filename}: angle {initial_angle_str} is not sorted by frame")
+        cache[_to_int(initial_angle_str)] = _to_int(last_row["Camera Angle"])
 
     _check_all_bins(cache.keys(), filename)
     return cache
@@ -570,8 +594,10 @@ def hold_sidehop(x_pos, z_pos, angle, left=True, fp32=True):
     else:
         updated_x_pos = np.float32(x_pos) + np.float32(data["X Position Change"])
         updated_z_pos = np.float32(z_pos) + np.float32(data["Z Position Change"])
-    updated_angle = data["Final Angle"]
-    return updated_x_pos, updated_z_pos, updated_angle
+    #updated_angle = data["Final Angle"]
+    #return updated_x_pos, updated_z_pos, updated_angle
+    return updated_x_pos, updated_z_pos, angle # important to NOT return updated_angle because it only considered multiples of 0x10 and if we do ESS turns afterwards which move 0x708 each, it can put us into the incorrect bin if we don't preserve our angle
+
 
 def guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True, fp32=True):
     """
@@ -626,8 +652,8 @@ def guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True, fp3
         cardinal = (camera_angle - 0x4000) % TOTAL_ANGLES
     if abs( (movement_angle - cardinal) % TOTAL_ANGLES) < 0x07: # really I could check for equality I think, but this is just playing it safe
         guano_chain_must_be_reset = True
-    print(f"{x_pos=}, {x_pos=}, {hex(angle)=}, {guano_chain_length=}, {left=}, {hex(movement_angle)=}, {updated_x_pos=}, {updated_z_pos=}, {hex(camera_angle)=}, {guano_chain_must_be_reset=}, {hex((movement_angle - camera_angle)%TOTAL_ANGLES)=}, {hex(cardinal)=}\n")
-    print(f"{[hex(a) for a in movement_angle_list]=}")
+    # print(f"{x_pos=}, {x_pos=}, {hex(angle)=}, {guano_chain_length=}, {left=}, {hex(movement_angle)=}, {updated_x_pos=}, {updated_z_pos=}, {hex(camera_angle)=}, {guano_chain_must_be_reset=}, {hex((movement_angle - camera_angle)%TOTAL_ANGLES)=}, {hex(cardinal)=}\n")
+    # print(f"{[hex(a) for a in movement_angle_list]=}")
     return updated_x_pos, updated_z_pos, angle, guano_chain_must_be_reset
 
 def shield_scoot_forward(x_pos, z_pos, angle, fp32=True): # TODO
@@ -669,10 +695,44 @@ def hold_backflip(x_pos, z_pos, angle, fp32=True):
     else:
         updated_x_pos = np.float32(x_pos) + np.float32(data["X Position Change"])
         updated_z_pos = np.float32(z_pos) + np.float32(data["Z Position Change"])
-    updated_angle = data["Final Angle"]
-    return updated_x_pos, updated_z_pos, updated_angle
+    #updated_angle = data["Final Angle"]
+    #return updated_x_pos, updated_z_pos, updated_angle
+    return updated_x_pos, updated_z_pos, angle # important to NOT return updated_angle because it only considered multiples of 0x10 and if we do ESS turns afterwards which move 0x708 each, it can put us into the incorrect bin if we don't preserve our angle
 
-def hold_deku_spin(x_pos, z_pos, angle, target=True, fp32=True):
+# def hold_deku_spin(x_pos, z_pos, angle, target=True, fp32=True):
+#     """
+#     Original (commented) implementation assumed target is ALWAYS TRUE (i.e. untargeted was not implemented)
+#     Importantly, this assumes you hold shield at the end of the spin
+
+#     deku_spin_linear_velocities = [2, 4, 6, 8, 8.772973, 8.383783, 7.994595, 7.605406, 7.216217, 6.827027, 6.437838, 6.048649, 5.65946, 5.27027, 4.881081, 4.881081] # repeated value at end might be due to holding shield as shield often repeats your last velocity for 1 frame
+#     """
+#     # movement_angle_offset = 0x0000
+#     # movement_angle = (camera_angle + movement_angle_offset) % TOTAL_ANGLES
+#     # cumulative_linear_velocity = 99.97837999999999 # [2, 4, 6, 8, 8.772973, 8.383783, 7.994595, 7.605406, 7.216217, 6.827027, 6.437838, 6.048649, 5.65946, 5.27027, 4.881081, 4.881081]
+#     # cumulative_x_velocity = cumulative_linear_velocity * Math_SinS(movement_angle)
+#     # cumulative_z_velocity = cumulative_linear_velocity * Math_CosS(movement_angle)
+
+#     # updated_x_pos = x_pos + VELOCITY_SCALE * cumulative_x_velocity 
+#     # updated_z_pos = z_pos + VELOCITY_SCALE * cumulative_z_velocity
+#     # return updated_x_pos, updated_z_pos, angle
+#     if target:
+#         data = HoldDekuSpinTargetedCache[get_bin(angle)] # note: this cache assumes that you hold TARGET + Up + A on the first frame, then you hold shield at end of spin
+#     else:
+#         data = HoldDekuSpinUntargetedCache[get_bin(angle)]
+#     if not fp32:
+#         updated_x_pos = x_pos + data["X Position Change"]
+#         updated_z_pos = z_pos + data["Z Position Change"]
+#     else:
+#         updated_x_pos = np.float32(x_pos) + np.float32(data["X Position Change"])
+#         updated_z_pos = np.float32(z_pos) + np.float32(data["Z Position Change"])
+#     #updated_angle = data["Final Angle"]
+#     ###assert updated_angle == FacingAngleToTargetedCameraAngle[get_bin(angle)], f"{angle=}, {updated_angle=}, {FacingAngleToTargetedCameraAngle[get_bin(angle)]=}"
+#     camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)] # this is the new facing angle we will have
+#     # return updated_x_pos, updated_z_pos, updated_angle
+#     return updated_x_pos, updated_z_pos, camera_angle
+
+#### EDIT: I think HoldDekuSpinTargeted does the same thing as HoldDekuSpinUntargeted, so I'm rewriting this function
+def hold_deku_spin(x_pos, z_pos, angle, direction="up", turn_first=False, fp32=True):
     """
     Original (commented) implementation assumed target is ALWAYS TRUE (i.e. untargeted was not implemented)
     Importantly, this assumes you hold shield at the end of the spin
@@ -688,10 +748,28 @@ def hold_deku_spin(x_pos, z_pos, angle, target=True, fp32=True):
     # updated_x_pos = x_pos + VELOCITY_SCALE * cumulative_x_velocity 
     # updated_z_pos = z_pos + VELOCITY_SCALE * cumulative_z_velocity
     # return updated_x_pos, updated_z_pos, angle
-    if target:
-        data = HoldDekuSpinTargetedCache[get_bin(angle)] # note: this cache assumes that you hold TARGET + Up + A on the first frame, then you hold shield at end of spin
+    if direction not in ["up", "down", "left", "right"]:
+        raise ValueError(f"got {direction=}")
+    if direction == "up":
+        assert turn_first == False
+    elif direction == "down":
+        assert turn_first == True
+
+    if direction == "left" and not turn_first:
+        data = HoldDekuSpinLeftCache[angle] # all 65536 angles matter!!
+    elif direction == "left" and turn_first:
+        data = HoldDekuSpinLeftTurnFirstCache[angle]
+    elif direction == "right" and not turn_first:
+        data = HoldDekuSpinRightCache[angle]
+    elif direction == "right" and turn_first:
+        data = HoldDekuSpinRightTurnFirstCache[angle] 
+    elif direction == "down" and turn_first:
+        data = HoldDekuSpinDownTurnFirstCache[angle]
+    elif direction == "up":
+        data = HoldDekuSpinUpCache[angle] ###data = HoldDekuSpinUntargetedCache[get_bin(angle)]  #data = HoldDekuSpinUpCache[angle] # TODO, using old one for now... might not matter
     else:
-        data = HoldDekuSpinUntargetedCache[get_bin(angle)]
+        raise ValueError(f"{direction=}, {turn_first=}")
+    
     if not fp32:
         updated_x_pos = x_pos + data["X Position Change"]
         updated_z_pos = z_pos + data["Z Position Change"]
@@ -699,7 +777,10 @@ def hold_deku_spin(x_pos, z_pos, angle, target=True, fp32=True):
         updated_x_pos = np.float32(x_pos) + np.float32(data["X Position Change"])
         updated_z_pos = np.float32(z_pos) + np.float32(data["Z Position Change"])
     updated_angle = data["Final Angle"]
+    ###assert updated_angle == FacingAngleToTargetedCameraAngle[get_bin(angle)], f"{angle=}, {updated_angle=}, {FacingAngleToTargetedCameraAngle[get_bin(angle)]=}"
+    ##########camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)] # this is the new facing angle we will have
     return updated_x_pos, updated_z_pos, updated_angle
+    ##########return updated_x_pos, updated_z_pos, camera_angle
 
 def ess_turn(x_pos, z_pos, angle, num_turns):
     """
@@ -719,7 +800,8 @@ def deku_spin_in_place(x_pos, z_pos, angle, num_spins):
 
 def cardinal_turn(x_pos, z_pos, angle, direction):
 
-    camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)]
+    ###camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)]
+    camera_angle = FacingAngleToUntargetedCameraAngleAfterTargeting[get_bin(angle)] # this is what our camera angle snaps to after untargeting
 
     if direction == "UP":
         angle_offset = 0x0000
@@ -1187,7 +1269,8 @@ def position_is_solution(x_pos, z_pos):
 
 
 def position_str(x, z, angle):
-    camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)]
+    ###camera_angle = FacingAngleToTargetedCameraAngle[get_bin(angle)]
+    camera_angle = FacingAngleToUntargetedCameraAngleAfterTargeting[get_bin(angle)] # this is what our camera angle snaps to after untargeting
     return f"    (X, Z, Angle, Cam)=({x}, {z}, {hex(angle)}, {hex(camera_angle)})"
 
 # def log_solution(x0, z0, a0, sol_x, sol_z, sol_a, action_log, filename):
@@ -1224,12 +1307,19 @@ initial_time = time.time()
 FacingAngleToTargetedCameraAngle = preprocess_targeted_camera_angles("hold_sidehop_left.csv")
 FacingAngleToLeftGuanoMovementAngles = preprocess_guano_movement_angles_csv("guanowalk_left.csv") # with current data, it is limited to only first ~30 mvoement angles, in reality there are ~54 or so, but in practice we probably wouldn't even use 5 or 10 of them anyway -- I would've done all of them but guanowalking into walls made it annoying to script and not worth the effort
 FacingAngleToRightGuanoMovementAngles = preprocess_guano_movement_angles_csv("guanowalk_right.csv")
+FacingAngleToUntargetedCameraAngleAfterTargeting = preprocess_untargeted_camera_angle_after_targeting(filename="target_and_untarget_and_let_camera_snap.csv")
 
 HoldBackflipCache = preprocess_csv("hold_backflip.csv")
 HoldLeftSidehopCache = preprocess_csv("hold_sidehop_left.csv")
 HoldRightSidehopCache = preprocess_csv("hold_sidehop_right.csv")
-HoldDekuSpinTargetedCache = preprocess_csv("hold_deku_spin_targeted.csv") # assumes holding target when starting the spin
-HoldDekuSpinUntargetedCache = preprocess_csv("hold_deku_spin_untargeted.csv") # assumes untargeted when starting the spin
+#HoldDekuSpinTargetedCache = preprocess_csv("hold_deku_spin_targeted.csv") # assumes holding target when starting the spin -- I think this might not matter?
+#HoldDekuSpinUntargetedCache = preprocess_csv("hold_deku_spin_untargeted.csv") # assumes untargeted when starting the spin -- outdated
+HoldDekuSpinLeftCache = preprocess_csv("hold_deku_spin_left.csv")
+HoldDekuSpinLeftTurnFirstCache = preprocess_csv("hold_deku_spin_left_turn_first.csv")
+HoldDekuSpinRightCache = preprocess_csv("hold_deku_spin_right.csv")
+HoldDekuSpinRightTurnFirstCache = preprocess_csv("hold_deku_spin_right_turn_first.csv")
+HoldDekuSpinDownTurnFirstCache = preprocess_csv("hold_deku_spin_down_turn_first.csv")
+HoldDekuSpinUpCache = preprocess_csv("hold_deku_spin_up.csv")
 final_time = time.time()
 print(f"Caches generated in {final_time-initial_time:.2f} seconds")
 
@@ -1241,13 +1331,19 @@ MovementCosts = {
     "GuanoShieldScootRight" : 1,
     "ShieldScootForward" : 1,
     "HoldBackflip" : 1,
-    "HoldDekuSpinTargeted" : 1,
-    "HoldDekuSpinUntargeted" : 1,
+    #"HoldDekuSpinTargeted" : 1,
+    #"HoldDekuSpinUntargeted" : 1,
+    "HoldDekuSpinLeft" : 1, 
+    "HoldDekuSpinLeftTurnFirst" : 1, 
+    "HoldDekuSpinRight" : 1, 
+    "HoldDekuSpinRightTurnFirst" : 1, 
+    "HoldDekuSpinDownTurnFirst" : 1, 
+    "HoldDekuSpinUp" : 1,
 }
 
 AngleCosts = {
     "ESSTurn": 1,
-    "CardinalTurn": 0.25,
+    "CardinalTurn": 0,
     "DekuSpinInPlace" : 1,
     "ResetGuanoChain" : 0,
     "NULL": 0,
@@ -1270,10 +1366,16 @@ MaxDisplacement = {
     "GuanoShieldScootRight": _SCOOT_DISP,
     "ShieldScootForward": _SCOOT_DISP,
     "HoldBackflip": _max_disp(HoldBackflipCache),
-    "HoldDekuSpinTargeted": _max_disp(HoldDekuSpinTargetedCache),
-    "HoldDekuSpinUntargeted": _max_disp(HoldDekuSpinUntargetedCache),
+    # "HoldDekuSpinTargeted": _max_disp(HoldDekuSpinTargetedCache),
+    # "HoldDekuSpinUntargeted": _max_disp(HoldDekuSpinUntargetedCache),
+    "HoldDekuSpinLeft": _max_disp(HoldDekuSpinLeftCache),
+    "HoldDekuSpinLeftTurnFirst": _max_disp(HoldDekuSpinLeftTurnFirstCache), 
+    "HoldDekuSpinRight": _max_disp(HoldDekuSpinRightCache), 
+    "HoldDekuSpinRightTurnFirst": _max_disp(HoldDekuSpinRightTurnFirstCache), 
+    "HoldDekuSpinDownTurnFirst": _max_disp(HoldDekuSpinDownTurnFirstCache), 
+    "HoldDekuSpinUp": _max_disp(HoldDekuSpinUpCache),
 }
-assert MaxDisplacement.keys() == MovementCosts.keys()  # catches a new move missing from one dict
+###assert MaxDisplacement.keys() == MovementCosts.keys()  # catches a new move missing from one dict
 MAX_REACH_PER_COST = max(
     float("inf") if MovementCosts[k] == 0 else MaxDisplacement[k] / MovementCosts[k]
     for k in MovementCosts
@@ -1281,11 +1383,12 @@ MAX_REACH_PER_COST = max(
 print(f"{MAX_REACH_PER_COST=}")
 ############## from claude ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-MAX_COST = 7 # 10
-MAX_ESS_TURNS = 8 # e.g. -8, -7, ..., -1, 1, ..., 7, 8 (i.e. do negative and positive but skip 0)
+MAX_COST = 5#7 # 10
+MAX_ESS_TURNS = 8#10 # e.g. -8, -7, ..., -1, 1, ..., 7, 8 (i.e. do negative and positive but skip 0)
 ESS_OPTIONS = [a for a in range(-MAX_ESS_TURNS, MAX_ESS_TURNS+1) if a != 0]
-MAX_DEKU_SPINS_IN_PLACE = 3
-MAX_GUANO_CHAIN_LENGTH = 5 #20 #5
+print(f"{ESS_OPTIONS=}")
+MAX_DEKU_SPINS_IN_PLACE = 5
+MAX_GUANO_CHAIN_LENGTH = 7 #5 #20 #5
 
 def find_solutions(x0, z0, a0, filename):
     """
@@ -1391,8 +1494,22 @@ def find_solutions(x0, z0, a0, filename):
                     action_log.append(f"{movement_option}" + position_str(x=new_x, z=new_z, angle=new_a))
                     dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=0, action_log=action_log, cost=cost+MovementCosts[movement_option])
                     action_log.pop()
-                elif movement_option in ["HoldDekuSpinTargeted", "HoldDekuSpinUntargeted"]:
-                    new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, target=movement_option=="HoldDekuSpinTargeted")
+                elif movement_option in ["HoldDekuSpinLeft", "HoldDekuSpinLeftTurnFirst", "HoldDekuSpinRight", "HoldDekuSpinRightTurnFirst", "HoldDekuSpinDownTurnFirst", "HoldDekuSpinUp"]:#["HoldDekuSpinTargeted", "HoldDekuSpinUntargeted"]:
+                    if movement_option == "HoldDekuSpinLeft":
+                        new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, direction="left", turn_first=False)
+                    elif movement_option == "HoldDekuSpinLeftTurnFirst":
+                        new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, direction="left", turn_first=True)
+                    elif movement_option == "HoldDekuSpinRight":
+                        new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, direction="right", turn_first=False)
+                    elif movement_option == "HoldDekuSpinRightTurnFirst":
+                        new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, direction="right", turn_first=True)
+                    elif movement_option == "HoldDekuSpinDownTurnFirst":
+                        new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, direction="down", turn_first=True)
+                    elif movement_option == "HoldDekuSpinUp":
+                        new_x, new_z, new_a = hold_deku_spin(x_pos=x, z_pos=z, angle=a, direction="up", turn_first=False)
+                    else:
+                        raise ValueError(f"{movement_option=}")
+                    
                     action_log.append(f"{movement_option}" + position_str(x=new_x, z=new_z, angle=new_a))
                     dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=0, action_log=action_log, cost=cost+MovementCosts[movement_option])
                     action_log.pop()
@@ -1406,12 +1523,20 @@ def find_solutions(x0, z0, a0, filename):
 x0 = np.float32(-70)
 z0 = np.float32(209.75)
 a0 = 0x0000
-filename = "cmg-solutions-test0.txt"
-# t0 = time.time()
-# s, f = find_solutions(x0, z0, a0, filename)
-# t1 = time.time()
-#print(f"Successes: {s}, Failures: {f} in {t1-t0:.2f} seconds")
+# x0 = np.float32(-239.5) # 2 hold sidehops right after enteringg cmg
+# z0 = np.float32(209.75)
+# a0 = 0x0000
+filename = "cmg-solutions-test9.txt"
+t0 = time.time()
+s, f = find_solutions(x0, z0, a0, filename)
+t1 = time.time()
+print(f"Successes: {s}, Failures: {f} in {t1-t0:.2f} seconds")
 
-x_pos, z_pos, angle = ess_turn(x_pos=x0, z_pos=z0, angle=a0, num_turns=-5)
-print(f"{x_pos=}, {z_pos=}, {angle=}")
-x, z, a, _ = guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True)
+# x_pos, z_pos, angle = ess_turn(x_pos=x0, z_pos=z0, angle=a0, num_turns=-5)
+# print(f"{x_pos=}, {z_pos=}, {angle=}")
+# x, z, a, _ = guano_shield_scoot(x_pos, z_pos, angle, guano_chain_length=0, left=True)
+
+# x, z, a = hold_deku_spin(x_pos=x0, z_pos=z0, angle=a0, target=True)
+# print(f"{x=}, {z=}, {a=}")
+
+# import code; code.interact(local=locals())
