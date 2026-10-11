@@ -1325,29 +1325,31 @@ print(f"Caches generated in {final_time-initial_time:.2f} seconds")
 
 
 MovementCosts = {
-    "HoldSidehopLeft" : 1,
-    "HoldSidehopRight" : 1,
-    "GuanoShieldScootLeft" : 1,
-    "GuanoShieldScootRight" : 1,
-    "ShieldScootForward" : 1,
-    "HoldBackflip" : 1,
+    "HoldSidehopLeft" : 8,#1,
+    "HoldSidehopRight" : 8,#1,
+    "GuanoShieldScootLeft" : 8,#1,
+    "GuanoShieldScootRight" : 8,#1,
+    "ShieldScootForward" : 8,#1,
+    "HoldBackflip" : 13,#1,
     #"HoldDekuSpinTargeted" : 1,
     #"HoldDekuSpinUntargeted" : 1,
-    "HoldDekuSpinLeft" : 1, 
-    "HoldDekuSpinLeftTurnFirst" : 1, 
-    "HoldDekuSpinRight" : 1, 
-    "HoldDekuSpinRightTurnFirst" : 1, 
-    "HoldDekuSpinDownTurnFirst" : 1, 
-    "HoldDekuSpinUp" : 1,
+    "HoldDekuSpinLeft" : 22,#1, 
+    "HoldDekuSpinLeftTurnFirst" : 22,#1, 
+    "HoldDekuSpinRight" : 22,#1, 
+    "HoldDekuSpinRightTurnFirst" : 22,#1, 
+    "HoldDekuSpinDownTurnFirst" : 22,#1, 
+    "HoldDekuSpinUp" : 22,#1,
 }
 
 AngleCosts = {
-    "ESSTurn": 1,
-    "CardinalTurn": 0,
-    "DekuSpinInPlace" : 1,
+    "CardinalTurn+ESSTurn" : 0,
+    "ESSTurn": 8,#1,
+    "CardinalTurn": 5,#0,
+    "DekuSpinInPlace" : 20,#1,
     "ResetGuanoChain" : 0,
     "NULL": 0,
 }
+AngleCosts["CardinalTurn+ESSTurn"] = AngleCosts["CardinalTurn"] + AngleCosts["ESSTurn"]
 
 
 ############## TODO double check from claude
@@ -1383,7 +1385,7 @@ MAX_REACH_PER_COST = max(
 print(f"{MAX_REACH_PER_COST=}")
 ############## from claude ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-MAX_COST = 5#7 # 10
+MAX_COST = 56#5#7 # 10
 MAX_ESS_TURNS = 8#10 # e.g. -8, -7, ..., -1, 1, ..., 7, 8 (i.e. do negative and positive but skip 0)
 ESS_OPTIONS = [a for a in range(-MAX_ESS_TURNS, MAX_ESS_TURNS+1) if a != 0]
 print(f"{ESS_OPTIONS=}")
@@ -1457,6 +1459,16 @@ def find_solutions(x0, z0, a0, filename):
                         action_log.append(f"{num_deku_spins} Deku Spins In Place" + position_str(x=new_x, z=new_z, angle=new_a))
                         dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=0, action_log=action_log, cost=cost+AngleCosts[angle_option]*num_deku_spins)
                         action_log.pop()
+                elif angle_option == "CardinalTurn+ESSTurn":
+                    for direction in ['LEFT', 'RIGHT', 'DOWN']:
+                        new_x, new_z, new_a = cardinal_turn(x_pos=x, z_pos=z, angle=a, direction=direction)
+                        action_log.append(f"Cardinal Turn {direction}" + position_str(x=new_x, z=new_z, angle=new_a))
+                        for num_turns in ESS_OPTIONS:
+                            new_x, new_z, new_a = ess_turn(x_pos=x, z_pos=z, angle=a, num_turns=num_turns)
+                            action_log.append(f"{num_turns} ESS Turns" + position_str(x=new_x, z=new_z, angle=new_a))
+                            dfs(x=new_x, z=new_z, a=new_a, angle_turn=not angle_turn, guano_chain_length=0, action_log=action_log, cost=cost+AngleCosts[angle_option])
+                            action_log.pop()
+                        action_log.pop()
                 elif angle_option == "NULL":
                     dfs(x=x, z=z, a=a, angle_turn=not angle_turn, guano_chain_length=guano_chain_length, action_log=action_log, cost=cost)
                 elif angle_option == "ResetGuanoChain":
@@ -1526,7 +1538,7 @@ a0 = 0x0000
 # x0 = np.float32(-239.5) # 2 hold sidehops right after enteringg cmg
 # z0 = np.float32(209.75)
 # a0 = 0x0000
-filename = "cmg-solutions-test9.txt"
+filename = "cmg-solutions-test13.txt"
 t0 = time.time()
 s, f = find_solutions(x0, z0, a0, filename)
 t1 = time.time()
